@@ -106,6 +106,13 @@ type Header struct {
 
 	// RequestsHash was added by EIP-7685 and is ignored in legacy headers.
 	RequestsHash *common.Hash `json:"requestsHash" rlp:"optional"`
+
+	// Validator signature for double validation in Posv consensus.
+	Validator []byte `json:"validator" rlp:"optional"`
+
+	// Validators list for checkpoint blocks in Posv consensus.
+	// Stores validator indices as 4-byte integers (M2ByteLength = 4).
+	Validators []byte `json:"validators" rlp:"optional"`
 }
 
 // field type overrides for gencodec
@@ -120,6 +127,9 @@ type headerMarshaling struct {
 	Hash          common.Hash `json:"hash"` // adds call to Hash() in MarshalJSON
 	BlobGasUsed   *hexutil.Uint64
 	ExcessBlobGas *hexutil.Uint64
+	Validator     hexutil.Bytes // Posv
+	Validators    hexutil.Bytes // Posv
+
 }
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its

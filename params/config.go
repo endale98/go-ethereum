@@ -430,10 +430,33 @@ type ChainConfig struct {
 	// those cases.
 	EnableVerkleAtGenesis bool `json:"enableVerkleAtGenesis,omitempty"`
 
+	// Custom TIP (Tomochain Improvement Proposal) fork blocks for Posv consensus
+	TIP2019Block                 *big.Int `json:"tip2019Block,omitempty"`                 // TIP2019 switch block (nil = no fork, 0 = already activated)
+	TIPSigningBlock              *big.Int `json:"tipSigningBlock,omitempty"`              // TIPSigning switch block (nil = no fork, 0 = already activated)
+	TIPRandomizeBlock            *big.Int `json:"tipRandomizeBlock,omitempty"`            // TIPRandomize switch block (nil = no fork, 0 = already activated)
+	BlackListHFBlock             *big.Int `json:"blackListHFBlock,omitempty"`             // BlackListHF switch block (nil = no fork, 0 = already activated)
+	TIPTRC21FeeBlock             *big.Int `json:"tipTRC21FeeBlock,omitempty"`             // TIPTRC21Fee switch block (nil = no fork, 0 = already activated)
+	TIPTomoXBlock                *big.Int `json:"tipTomoXBlock,omitempty"`                // TIPTomoX switch block (nil = no fork, 0 = already activated)
+	TIPTomoXLendingBlock         *big.Int `json:"tipTomoXLendingBlock,omitempty"`         // TIPTomoXLending switch block (nil = no fork, 0 = already activated)
+	TIPTomoXCancellationFeeBlock *big.Int `json:"tipTomoXCancellationFeeBlock,omitempty"` // TIPTomoXCancellationFee switch block (nil = no fork, 0 = already activated)
+	SaigonBlock                  *big.Int `json:"saigonBlock,omitempty"`                  // Saigon switch block (nil = no fork, 0 = already activated)
+	AtlasBlock                   *big.Int `json:"atlasBlock,omitempty"`                   // Atlas switch block (nil = no fork, 0 = already activated)
+
 	// Various consensus engines
-	Ethash             *EthashConfig       `json:"ethash,omitempty"`
-	Clique             *CliqueConfig       `json:"clique,omitempty"`
+	Ethash *EthashConfig `json:"ethash,omitempty"`
+	Clique *CliqueConfig `json:"clique,omitempty"`
+	Posv   *PosvConfig   `json:"posv,omitempty"` // Posv consensus engine config
+
 	BlobScheduleConfig *BlobScheduleConfig `json:"blobSchedule,omitempty"`
+}
+
+type PosvConfig struct {
+	Period              uint64         `json:"period"`              // Number of seconds between blocks to enforce
+	Epoch               uint64         `json:"epoch"`               // Epoch length to reset votes and checkpoint
+	Reward              uint64         `json:"reward"`              // Block reward - unit Ether
+	RewardCheckpoint    uint64         `json:"rewardCheckpoint"`    // Checkpoint block for calculate rewards.
+	Gap                 uint64         `json:"gap"`                 // Gap time preparing for the next epoch
+	FoudationWalletAddr common.Address `json:"foudationWalletAddr"` // Foundation Address Wallet
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -670,6 +693,56 @@ func (c *ChainConfig) IsVerkleGenesis() bool {
 // IsEIP4762 returns whether eip 4762 has been activated at given block.
 func (c *ChainConfig) IsEIP4762(num *big.Int, time uint64) bool {
 	return c.IsVerkle(num, time)
+}
+
+// IsTIP2019 returns whether num is either equal to the TIP2019 fork block or greater.
+func (c *ChainConfig) IsTIP2019(num *big.Int) bool {
+	return isBlockForked(c.TIP2019Block, num)
+}
+
+// IsTIPSigning returns whether num is either equal to the TIPSigning fork block or greater.
+func (c *ChainConfig) IsTIPSigning(num *big.Int) bool {
+	return isBlockForked(c.TIPSigningBlock, num)
+}
+
+// IsTIPRandomize returns whether num is either equal to the TIPRandomize fork block or greater.
+func (c *ChainConfig) IsTIPRandomize(num *big.Int) bool {
+	return isBlockForked(c.TIPRandomizeBlock, num)
+}
+
+// IsBlackListHF returns whether num is either equal to the BlackListHF fork block or greater.
+func (c *ChainConfig) IsBlackListHF(num *big.Int) bool {
+	return isBlockForked(c.BlackListHFBlock, num)
+}
+
+// IsTIPTRC21Fee returns whether num is either equal to the TIPTRC21Fee fork block or greater.
+func (c *ChainConfig) IsTIPTRC21Fee(num *big.Int) bool {
+	return isBlockForked(c.TIPTRC21FeeBlock, num)
+}
+
+// IsTIPTomoX returns whether num is either equal to the TIPTomoX fork block or greater.
+func (c *ChainConfig) IsTIPTomoX(num *big.Int) bool {
+	return isBlockForked(c.TIPTomoXBlock, num)
+}
+
+// IsTIPTomoXLending returns whether num is either equal to the TIPTomoXLending fork block or greater.
+func (c *ChainConfig) IsTIPTomoXLending(num *big.Int) bool {
+	return isBlockForked(c.TIPTomoXLendingBlock, num)
+}
+
+// IsTIPTomoXCancellationFee returns whether num is either equal to the TIPTomoXCancellationFee fork block or greater.
+func (c *ChainConfig) IsTIPTomoXCancellationFee(num *big.Int) bool {
+	return isBlockForked(c.TIPTomoXCancellationFeeBlock, num)
+}
+
+// IsSaigon returns whether num is either equal to the Saigon fork block or greater.
+func (c *ChainConfig) IsSaigon(num *big.Int) bool {
+	return isBlockForked(c.SaigonBlock, num)
+}
+
+// IsAtlas returns whether num is either equal to the Atlas fork block or greater.
+func (c *ChainConfig) IsAtlas(num *big.Int) bool {
+	return isBlockForked(c.AtlasBlock, num)
 }
 
 // CheckCompatible checks whether scheduled fork transitions have been imported
