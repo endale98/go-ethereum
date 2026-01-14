@@ -361,6 +361,9 @@ func (p *Posv) GetMasternodesFromCheckpointHeader(preCheckpointHeader *types.Hea
 	return masternodes
 }
 
+// CalcDifficulty is the difficulty adjustment algorithm. It returns the difficulty
+// that a new block should have based on the previous blocks in the chain and the
+// current signer.
 func (c *Posv) CalcDifficulty(chain consensus.ChainReader, time uint64, parent *types.Header) *big.Int {
 	return c.calcDifficulty(chain, parent, c.signer)
 }
