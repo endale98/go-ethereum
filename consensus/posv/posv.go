@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -371,6 +373,10 @@ func (p *Posv) calcDifficulty(chain ChainReader, parent *types.Header, creator c
 	return big.NewInt(int64(len - Hop(len, preIndex, curIndex)))
 }
 
+func (c *Posv) RecoverSigner(header *types.Header) (common.Address, error) {
+	return ecrecover(header, c.signatures)
+}
+
 func (p *Posv) YourTurn(chain ChainReader, parent *types.Header, signer common.Address) (int, int, int, bool, error) {
 	masternodes := p.GetMasternodes(chain, parent)
 
@@ -403,6 +409,84 @@ func (p *Posv) YourTurn(chain ChainReader, parent *types.Header, signer common.A
 		return len(masternodes), preIndex, curIndex, true, nil
 	}
 	return len(masternodes), preIndex, curIndex, false, nil
+}
+
+// snapshot retrieves the authorization snapshot at a given point in time.
+func (c *Posv) snapshot(chain consensus.ChainReader, number uint64, hash common.Hash, parents []*types.Header) (*Snapshot, error) {
+	// Search for a snapshot in memory or on disk for checkpoints
+	var (
+		headers []*types.Header
+		snap    *Snapshot
+	)
+	for snap == nil {
+		// If an in-memory snapshot was found, use that
+		if s, ok := c.recents.Get(hash); ok {
+			snap = s
+			break
+		}
+		// If an on-disk checkpoint snapshot can be found, use that
+		// checkpoint snapshot = checkpoint - gap
+		if (number+c.config.Gap)%c.config.Epoch == 0 {
+			if s, err := loadSnapshot(c.config, c.signatures, c.db, hash); err == nil {
+				log.Trace("Loaded voting snapshot form disk", "number", number, "hash", hash)
+				snap = s
+				break
+			}
+		}
+		// If we're at block zero, make a snapshot
+		if number == 0 {
+			genesis := chain.GetHeaderByNumber(0)
+			if err := c.VerifyHeader(chain, genesis, true); err != nil {
+				return nil, err
+			}
+			signers := make([]common.Address, (len(genesis.Extra)-extraVanity-extraSeal)/common.AddressLength)
+			for i := 0; i < len(signers); i++ {
+				copy(signers[i][:], genesis.Extra[extraVanity+i*common.AddressLength:])
+			}
+			snap = newSnapshot(c.config, c.signatures, 0, genesis.Hash(), signers)
+			if err := snap.store(c.db); err != nil {
+				return nil, err
+			}
+			log.Trace("Stored genesis voting snapshot to disk")
+			break
+		}
+		// No snapshot for this header, gather the header and move backward
+		var header *types.Header
+		if len(parents) > 0 {
+			// If we have explicit parents, pick from there (enforced)
+			header = parents[len(parents)-1]
+			if header.Hash() != hash || header.Number.Uint64() != number {
+				return nil, consensus.ErrUnknownAncestor
+			}
+			parents = parents[:len(parents)-1]
+		} else {
+			// No explicit parents (or no more left), reach out to the database
+			header = chain.GetHeader(hash, number)
+			if header == nil {
+				return nil, consensus.ErrUnknownAncestor
+			}
+		}
+		headers = append(headers, header)
+		number, hash = number-1, header.ParentHash
+	}
+	// Previous snapshot found, apply any pending headers on top of it
+	for i := 0; i < len(headers)/2; i++ {
+		headers[i], headers[len(headers)-1-i] = headers[len(headers)-1-i], headers[i]
+	}
+	snap, err := snap.apply(headers)
+	if err != nil {
+		return nil, err
+	}
+	c.recents.Add(snap.Hash, snap)
+
+	// If we've generated a new checkpoint snapshot, save to disk
+	if (snap.Number+c.config.Gap)%c.config.Epoch == 0 {
+		if err = snap.store(c.db); err != nil {
+			return nil, err
+		}
+		log.Trace("Stored voting snapshot to disk", "number", snap.Number, "hash", snap.Hash)
+	}
+	return snap, err
 }
 
 func (p *Posv) RecoverValidator(header *types.Header) (common.Address, error) {
@@ -452,6 +536,127 @@ func (p *Posv) GetValidator(creator common.Address, chain ChainReader, header *t
 	return m[creator], nil
 }
 
+// Prepare implements consensus.Engine, preparing all the consensus fields of the
+// header for running the transactions on top.
+func (c *Posv) Prepare(chain consensus.ChainReader, header *types.Header) error {
+	// If the block isn't a checkpoint, cast a random vote (good enough for now)
+	header.Coinbase = common.Address{}
+	header.Nonce = types.BlockNonce{}
+
+	number := header.Number.Uint64()
+	// Assemble the voting snapshot to check which votes make sense
+	snap, err := c.snapshot(chain, number-1, header.ParentHash, nil)
+	if err != nil {
+		return err
+	}
+	if number%c.config.Epoch != 0 {
+		c.lock.RLock()
+
+		// Gather all the proposals that make sense voting on
+		addresses := make([]common.Address, 0, len(c.proposals))
+		for address, authorize := range c.proposals {
+			if snap.validVote(address, authorize) {
+				addresses = append(addresses, address)
+			}
+		}
+		// If there's pending proposals, cast a vote on them
+		if len(addresses) > 0 {
+			header.Coinbase = addresses[rand.Intn(len(addresses))]
+			if c.proposals[header.Coinbase] {
+				copy(header.Nonce[:], nonceAuthVote)
+			} else {
+				copy(header.Nonce[:], nonceDropVote)
+			}
+		}
+		c.lock.RUnlock()
+	}
+	parent := chain.GetHeader(header.ParentHash, number-1)
+	if parent == nil {
+		return consensus.ErrUnknownAncestor
+	}
+	// Set the correct difficulty
+	header.Difficulty = c.calcDifficulty(chain, parent, c.signer)
+	log.Debug("CalcDifficulty ", "number", header.Number, "difficulty", header.Difficulty)
+	// Ensure the extra data has all it's components
+	if len(header.Extra) < extraVanity {
+		header.Extra = append(header.Extra, bytes.Repeat([]byte{0x00}, extraVanity-len(header.Extra))...)
+	}
+	header.Extra = header.Extra[:extraVanity]
+	masternodes := snap.GetSigners()
+	if number >= c.config.Epoch && number%c.config.Epoch == 0 {
+		if c.HookPenalty != nil || c.HookPenaltyTIPSigning != nil {
+			var penMasternodes []common.Address = nil
+			var err error = nil
+			if chain.Config().IsTIPSigning(header.Number) {
+				penMasternodes, err = c.HookPenaltyTIPSigning(chain, header, masternodes)
+			} else {
+				penMasternodes, err = c.HookPenalty(chain, number)
+			}
+			if err != nil {
+				return err
+			}
+			if len(penMasternodes) > 0 {
+				// penalize bad masternode(s)
+				masternodes = common.RemoveItemFromArray(masternodes, penMasternodes)
+				for _, address := range penMasternodes {
+					log.Debug("Penalty status", "address", address, "number", number)
+				}
+				header.Penalties = common.ExtractAddressToBytes(penMasternodes)
+			}
+		}
+		// Prevent penalized masternode(s) within 4 recent epochs
+		for i := 1; i <= common.LimitPenaltyEpoch; i++ {
+			if number > uint64(i)*c.config.Epoch {
+				masternodes = RemovePenaltiesFromBlock(chain, masternodes, number-uint64(i)*c.config.Epoch)
+			}
+		}
+		for _, masternode := range masternodes {
+			header.Extra = append(header.Extra, masternode[:]...)
+		}
+		if c.HookValidator != nil {
+			validators, err := c.HookValidator(header, masternodes)
+			if err != nil {
+				return err
+			}
+			header.Validators = validators
+		}
+	}
+	header.Extra = append(header.Extra, make([]byte, extraSeal)...)
+
+	// Mix digest is reserved for now, set to empty
+	header.MixDigest = common.Hash{}
+
+	// Ensure the timestamp has the correct delay
+
+	header.Time = parent.Time + c.config.Period
+	if header.Time < uint64(time.Now().Unix()) {
+		header.Time = uint64(time.Now().Unix())
+	}
+	return nil
+}
+
+func (c *Posv) UpdateMasternodes(chain consensus.ChainReader, header *types.Header, ms []Masternode) error {
+	number := header.Number.Uint64()
+	log.Trace("take snapshot", "number", number, "hash", header.Hash())
+	// get snapshot
+	snap, err := c.snapshot(chain, number, header.Hash(), nil)
+	if err != nil {
+		return err
+	}
+	newMasternodes := make(map[common.Address]struct{})
+	for _, m := range ms {
+		newMasternodes[m.Address] = struct{}{}
+	}
+	snap.Signers = newMasternodes
+	nm := []string{}
+	for _, n := range ms {
+		nm = append(nm, n.Address.String())
+	}
+	c.recents.Add(snap.Hash, snap)
+	log.Info("New set of masternodes has been updated to snapshot", "number", snap.Number, "hash", snap.Hash, "new masternodes", nm)
+	return nil
+}
+
 // [to-do] implement checkSignersOnCheckpoint
 func (p *Posv) checkSignersOnCheckpoint(chain ChainReader, header *types.Header, signers []common.Address) error {
 	return nil
@@ -459,11 +664,6 @@ func (p *Posv) checkSignersOnCheckpoint(chain ChainReader, header *types.Header,
 
 // [to-do] implement GetSignersFromContract
 func (p *Posv) GetSignersFromContract(chain ChainReader, header *types.Header) ([]common.Address, error) {
-	return nil, nil
-}
-
-// [to-do] implement snapshot
-func (p *Posv) snapshot(chain ChainReader, number uint64, hash common.Hash, parents []*types.Header) (*Snapshot, error) {
 	return nil, nil
 }
 
@@ -478,9 +678,6 @@ func (p *Posv) VerifyUncles(chain ChainReader, block *types.Block) error {
 	return nil
 }
 func (p *Posv) VerifySeal(chain ChainReader, header *types.Header) error {
-	return nil
-}
-func (p *Posv) Prepare(chain ChainReader, header *types.Header) error {
 	return nil
 }
 
@@ -556,6 +753,21 @@ func GetMasternodesFromCheckpointHeader(checkpointHeader *types.Header) []common
 	return masternodes
 }
 
+// Extract validators from byte array.
+func RemovePenaltiesFromBlock(chain consensus.ChainReader, masternodes []common.Address, epochNumber uint64) []common.Address {
+	if epochNumber <= 0 {
+		return masternodes
+	}
+	header := chain.GetHeaderByNumber(epochNumber)
+	block := chain.GetBlock(header.Hash(), epochNumber)
+	penalties := block.Penalties()
+	if penalties != nil {
+		prevPenalties := common.ExtractAddressFromBytes(penalties)
+		masternodes = common.RemoveItemFromArray(masternodes, prevPenalties)
+	}
+	return masternodes
+}
+
 func getM1M2(masternodes []common.Address, validators []int64, currentHeader *types.Header, config *params.ChainConfig) (map[common.Address]common.Address, uint64, error) {
 	m1m2 := map[common.Address]common.Address{}
 	maxMNs := len(masternodes)
@@ -575,4 +787,15 @@ func getM1M2(masternodes []common.Address, validators []int64, currentHeader *ty
 		}
 	}
 	return m1m2, moveM2, nil
+}
+
+// APIs implements consensus.Engine, returning the user facing RPC API to allow
+// controlling the signer voting.
+func (c *Posv) APIs(chain consensus.ChainReader) []rpc.API {
+	return []rpc.API{{
+		Namespace: "posv",
+		Version:   "1.0",
+		Service:   &API{chain: chain, posv: c},
+		Public:    true,
+	}}
 }
