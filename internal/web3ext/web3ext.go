@@ -20,6 +20,7 @@ package web3ext
 var Modules = map[string]string{
 	"admin":  AdminJs,
 	"clique": CliqueJs,
+	"posv":   Posv_JS,
 	"debug":  DebugJs,
 	"eth":    EthJs,
 	"miner":  MinerJs,
@@ -85,7 +86,41 @@ web3._extend({
 	]
 });
 `
-
+const Posv_JS = `
+web3._extend({
+	property: 'posv',
+	methods: [
+		new web3._extend.Method({
+			name: 'getSnapshot',
+			call: 'posv_getSnapshot',
+			params: 1,
+			inputFormatter: [null]
+		}),
+		new web3._extend.Method({
+			name: 'getSnapshotAtHash',
+			call: 'posv_getSnapshotAtHash',
+			params: 1
+		}),
+		new web3._extend.Method({
+			name: 'getSigners',
+			call: 'posv_getSigners',
+			params: 1,
+			inputFormatter: [null]
+		}),
+		new web3._extend.Method({
+			name: 'getSignersAtHash',
+			call: 'posv_getSignersAtHash',
+			params: 1
+		}),
+	],
+	properties: [
+		new web3._extend.Property({
+			name: 'networkInformation',
+			getter: 'posv_networkInformation'
+		}),
+	]
+});
+`
 const AdminJs = `
 web3._extend({
 	property: 'admin',

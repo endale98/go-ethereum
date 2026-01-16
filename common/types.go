@@ -39,6 +39,8 @@ const (
 	HashLength = 32
 	// AddressLength is the expected length of the address
 	AddressLength = 20
+
+	MasternodeVotingSMC = "0x0000000000000000000000000000000000000088"
 )
 
 var (
