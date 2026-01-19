@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -134,7 +135,12 @@ func (p *Posv) Signer() common.Address {
 func (p *Posv) Author(header *types.Header) (common.Address, error) {
 	return ecrecover(header, p.signatures)
 }
-func (p *Posv) verifyHeadeWithCache(chain ChainReader, header *types.Header, parents []*types.Header, fullVerify bool) error {
+
+func (c *Posv) VerifyHeader(chain consensus.ChainReader, header *types.Header, fullVerify bool) error {
+	return c.verifyHeaderWithCache(chain, header, nil, fullVerify)
+}
+
+func (p *Posv) verifyHeaderWithCache(chain ChainReader, header *types.Header, parents []*types.Header, fullVerify bool) error {
 	_, check := p.verifiedHeaders.Get(header.Hash())
 	if check {
 		return nil
@@ -151,8 +157,7 @@ func (p *Posv) verifyHeader(chain ChainReader, header *types.Header, parents []*
 	}
 	number := header.Number.Uint64()
 	if fullVerify {
-		// header.Number.Uint64() > p.config.Epoch && len(header.Validator) == 0 (check have validator in header)
-		if header.Number.Uint64() > p.config.Epoch {
+		if header.Number.Uint64() > p.config.Epoch && len(header.Attestor) == 0 { // No attestor info
 			return ErrNoValidatorSignature
 		}
 		if header.Time > uint64(time.Now().Unix()) {
@@ -195,10 +200,9 @@ func (p *Posv) verifyHeader(chain ChainReader, header *types.Header, parents []*
 		return errInvalidUncleHash
 	}
 	// If all checks passed, validate any special fields for hard forks
-	// [to-do] check fork hashes
-	// if err := misc.VerifyForkHashes(chain.Config(), header, false); err != nil {
-	// 	return err
-	// }
+	if err := misc.VerifyForkHashes(chain.Config(), header, false); err != nil {
+		return err
+	}
 	// All basic checks passed, verify cascading fields
 	return p.verifyCascadingFields(chain, header, parents, fullVerify)
 }
@@ -268,6 +272,7 @@ func (p *Posv) verifySeal(chain ChainReader, header *types.Header, parents []*ty
 	}
 
 	difficulty := p.calcDifficulty(chain, parent, creator)
+	fmt.Printf("verify seal block : \n :number : %d\nhash : %d\nblock difficulty : %d\ncalc difficulty : %d\ncreator: %s\n", header.Number, header.Hash(), header.Difficulty, difficulty, creator.Hex())
 	// Ensure that the block's difficulty is meaningful (may not be correct at this point)
 	if number > 0 {
 		if header.Difficulty.Int64() != difficulty.Int64() {
@@ -410,13 +415,13 @@ func (p *Posv) RecoverValidator(header *types.Header) (common.Address, error) {
 	if address, known := p.validatorSignatures.Get(hash); known {
 		return common.Address(address), nil
 	}
-	// Retrieve the signature from the header.Validator
+	// Retrieve the signature from the header.Validator (Attestor)
 	// len equals 65 bytes
-	if len(header.Validator) != extraSeal {
+	if header.Attestor == nil || len(header.Attestor) != extraSeal {
 		return common.Address{}, ErrFailValidatorSignature
 	}
 	// Recover the public key and the Ethereum address
-	pubkey, err := crypto.Ecrecover(sigHash(header).Bytes(), header.Validator)
+	pubkey, err := crypto.Ecrecover(sigHash(header).Bytes(), header.Attestor)
 	if err != nil {
 		return common.Address{}, err
 	}
@@ -462,16 +467,7 @@ func (p *Posv) GetSignersFromContract(chain ChainReader, header *types.Header) (
 	return nil, nil
 }
 
-// [to-do] implement snapshot
-func (p *Posv) snapshot(chain ChainReader, number uint64, hash common.Hash, parents []*types.Header) (*Snapshot, error) {
-	return nil, nil
-}
-
-func (p *Posv) VerifyHeader(chain ChainReader, header *types.Header, fullVerify bool) error {
-	return nil
-}
 func (p *Posv) VerifyHeaders(chain ChainReader, headers []*types.Header, seals []bool) (chan<- struct{}, <-chan error) {
-
 	return nil, nil
 }
 func (p *Posv) VerifyUncles(chain ChainReader, block *types.Block) error {
@@ -482,6 +478,11 @@ func (p *Posv) VerifySeal(chain ChainReader, header *types.Header) error {
 }
 func (p *Posv) Prepare(chain ChainReader, header *types.Header) error {
 	return nil
+}
+
+// [to-do] implement snapshot
+func (p *Posv) snapshot(chain ChainReader, number uint64, hash common.Hash, parents []*types.Header) (*Snapshot, error) {
+	return nil, nil
 }
 
 func ecrecover(header *types.Header, sigcache *lru.Cache[common.Hash, []byte]) (common.Address, error) {
@@ -512,6 +513,11 @@ func ecrecover(header *types.Header, sigcache *lru.Cache[common.Hash, []byte]) (
 func sigHash(header *types.Header) (hash common.Hash) {
 	hasher := sha3.NewLegacyKeccak256()
 
+	var attestor []byte
+	if header.Attestor != nil {
+		attestor = header.Attestor
+	}
+
 	rlp.Encode(hasher, []interface{}{
 		header.ParentHash,
 		header.UncleHash,
@@ -528,7 +534,7 @@ func sigHash(header *types.Header) (hash common.Hash) {
 		header.Extra[:len(header.Extra)-65], // Yes, this will panic if extra is too short
 		header.MixDigest,
 		header.Nonce,
-		header.Validator,
+		attestor,
 	})
 	hasher.Sum(hash[:0])
 	return hash
@@ -540,7 +546,11 @@ func GetM1M2FromCheckpointHeader(checkpointHeader *types.Header, currentHeader *
 	}
 	// Get signers from this block.
 	masternodes := GetMasternodesFromCheckpointHeader(checkpointHeader)
-	validators := ExtractValidatorsFromBytes(checkpointHeader.Validators)
+	var newAttestors []byte
+	if checkpointHeader.NewAttestors != nil {
+		newAttestors = checkpointHeader.NewAttestors
+	}
+	validators := ExtractValidatorsFromBytes(newAttestors)
 	m1m2, _, err := getM1M2(masternodes, validators, currentHeader, config)
 	if err != nil {
 		return map[common.Address]common.Address{}, err
