@@ -31,6 +31,9 @@ func (h Header) MarshalJSON() ([]byte, error) {
 		Extra            hexutil.Bytes   `json:"extraData"        gencodec:"required"`
 		MixDigest        common.Hash     `json:"mixHash"`
 		Nonce            BlockNonce      `json:"nonce"`
+		Attestor         hexutil.Bytes   `json:"attestor"   gencodec:"required"`
+		NewAttestors     hexutil.Bytes   `json:"newAttestors" gencodec:"required"`
+		Penalties        hexutil.Bytes   `json:"penalties"   gencodec:"required"`
 		BaseFee          *hexutil.Big    `json:"baseFeePerGas" rlp:"optional"`
 		WithdrawalsHash  *common.Hash    `json:"withdrawalsRoot" rlp:"optional"`
 		BlobGasUsed      *hexutil.Uint64 `json:"blobGasUsed" rlp:"optional"`
@@ -55,6 +58,9 @@ func (h Header) MarshalJSON() ([]byte, error) {
 	enc.Extra = h.Extra
 	enc.MixDigest = h.MixDigest
 	enc.Nonce = h.Nonce
+	enc.Attestor = h.Attestor
+	enc.NewAttestors = h.NewAttestors
+	enc.Penalties = h.Penalties
 	enc.BaseFee = (*hexutil.Big)(h.BaseFee)
 	enc.WithdrawalsHash = h.WithdrawalsHash
 	enc.BlobGasUsed = (*hexutil.Uint64)(h.BlobGasUsed)
@@ -83,6 +89,9 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 		Extra            *hexutil.Bytes  `json:"extraData"        gencodec:"required"`
 		MixDigest        *common.Hash    `json:"mixHash"`
 		Nonce            *BlockNonce     `json:"nonce"`
+		Attestor         *hexutil.Bytes  `json:"attestor"   gencodec:"required"`
+		NewAttestors     *hexutil.Bytes  `json:"newAttestors" gencodec:"required"`
+		Penalties        *hexutil.Bytes  `json:"penalties"   gencodec:"required"`
 		BaseFee          *hexutil.Big    `json:"baseFeePerGas" rlp:"optional"`
 		WithdrawalsHash  *common.Hash    `json:"withdrawalsRoot" rlp:"optional"`
 		BlobGasUsed      *hexutil.Uint64 `json:"blobGasUsed" rlp:"optional"`
@@ -151,6 +160,18 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 	if dec.Nonce != nil {
 		h.Nonce = *dec.Nonce
 	}
+	if dec.Attestor == nil {
+		return errors.New("missing required field 'attestor' for Header")
+	}
+	h.Attestor = *dec.Attestor
+	if dec.NewAttestors == nil {
+		return errors.New("missing required field 'newAttestors' for Header")
+	}
+	h.NewAttestors = *dec.NewAttestors
+	if dec.Penalties == nil {
+		return errors.New("missing required field 'penalties' for Header")
+	}
+	h.Penalties = *dec.Penalties
 	if dec.BaseFee != nil {
 		h.BaseFee = (*big.Int)(dec.BaseFee)
 	}
