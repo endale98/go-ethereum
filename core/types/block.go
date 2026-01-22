@@ -88,6 +88,7 @@ type Header struct {
 	Extra       []byte         `json:"extraData"        gencodec:"required"`
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       BlockNonce     `json:"nonce"`
+	Penalties   []byte         `json:"penalties"        gencodec:"required"`
 
 	Attestor     []byte `json:"attestor"   gencodec:"required"`
 	NewAttestors []byte `json:"newAttestors" gencodec:"required"`
@@ -438,6 +439,7 @@ func (b *Block) TxHash() common.Hash      { return b.header.TxHash }
 func (b *Block) ReceiptHash() common.Hash { return b.header.ReceiptHash }
 func (b *Block) UncleHash() common.Hash   { return b.header.UncleHash }
 func (b *Block) Extra() []byte            { return common.CopyBytes(b.header.Extra) }
+func (b *Block) Penalties() []byte        { return common.CopyBytes(b.header.Penalties) }
 
 func (b *Block) BaseFee() *big.Int {
 	if b.header.BaseFee == nil {

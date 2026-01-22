@@ -39,6 +39,8 @@ const (
 	HashLength = 32
 	// AddressLength is the expected length of the address
 	AddressLength = 20
+
+	MasternodeVotingSMC = "0x0000000000000000000000000000000000000088"
 )
 
 var (
@@ -485,4 +487,41 @@ func (b PrettyBytes) TerminalString() string {
 		return fmt.Sprintf("%x", b)
 	}
 	return fmt.Sprintf("%#x...%x (%dB)", b[:3], b[len(b)-3:], len(b))
+}
+
+// Extract validators from byte array.
+func ExtractAddressToBytes(penalties []Address) []byte {
+	data := []byte{}
+	for _, signer := range penalties {
+		data = append(data, signer[:]...)
+	}
+	return data
+}
+
+func ExtractAddressFromBytes(bytePenalties []byte) []Address {
+	if bytePenalties != nil && len(bytePenalties) < AddressLength {
+		return []Address{}
+	}
+	penalties := make([]Address, len(bytePenalties)/AddressLength)
+	for i := 0; i < len(penalties); i++ {
+		copy(penalties[i][:], bytePenalties[i*AddressLength:])
+	}
+	return penalties
+}
+
+// Extract validators from byte array.
+func RemoveItemFromArray(array []Address, items []Address) []Address {
+	if len(items) == 0 {
+		return array
+	}
+
+	for _, item := range items {
+		for i := len(array) - 1; i >= 0; i-- {
+			if array[i] == item {
+				array = append(array[:i], array[i+1:]...)
+			}
+		}
+	}
+
+	return array
 }
