@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -36,8 +37,8 @@ type LegacyRpcHeader struct {
 	Extra       hexutil.Bytes  `json:"extraData"`
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       hexutil.Bytes  `json:"nonce"`
+	LegacyHash  common.Hash    `json:"hash"`
 
-	LegacyHash common.Hash `json:"hash"` // For verification
 	// Legacy Fields (Source)
 	Validators hexutil.Bytes `json:"validators"` // New Set
 	Validator  hexutil.Bytes `json:"validator"`  // Sig
@@ -63,12 +64,12 @@ type TargetHeaderData struct {
 	Extra       hexutil.Bytes  `json:"extraData"`
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       hexutil.Bytes  `json:"nonce"`
+	LegacyHash  common.Hash    `json:"hash"`
 
-	LegacyHash common.Hash `json:"hash"` // For verification
 	// VICTION FIELDS (Renamed)
-	NewAttestors hexutil.Bytes `json:"newAttestors"`
-	Attestor     hexutil.Bytes `json:"attestor"`
-	Penalties    hexutil.Bytes `json:"penalties"`
+	NewAttestors []byte `json:"newAttestors,omitempty"`
+	Attestor     []byte `json:"attestor,omitempty"`
+	Penalties    []byte `json:"penalties,omitempty"`
 }
 
 type EncodedHeader struct {
@@ -108,59 +109,38 @@ func main() {
 	var targets []TargetHeaderData
 	var encoded []EncodedHeader
 
-	for num := end; num >= start; num-- {
+	for num := start; num <= end; num++ {
 		// Use raw RPC call to decode into our custom LegacyRpcHeader struct
 		var legacy LegacyRpcHeader
 		if err := rpcClient.CallContext(ctx, &legacy, "eth_getBlockByNumber", hexutil.EncodeUint64(num), false); err != nil {
 			log.Printf("Failed to fetch block %d: %v", num, err)
 			continue // Or log.Fatal if strict
 		}
-		fmt.Printf(" Receive legacy block : %+v\n", legacy)
+		spew.Dump(legacy)
+		// fmt.Printf(" Receive legacy block : %+v\n", legacy)
 
-		vicMainnetHeader := types.Header{
-			ParentHash:  legacy.ParentHash,
-			UncleHash:   legacy.UncleHash,
-			Coinbase:    legacy.Coinbase,
-			Root:        legacy.Root,
-			TxHash:      legacy.TxHash,
-			ReceiptHash: legacy.ReceiptHash,
-			Bloom:       types.Bloom(legacy.Bloom),
-			Difficulty:  (*big.Int)(legacy.Difficulty),
-			Number:      (*big.Int)(legacy.Number),
-			GasLimit:    uint64(legacy.GasLimit),
-			GasUsed:     uint64(legacy.GasUsed),
-			Time:        uint64(legacy.Time),
-			Extra:       legacy.Extra,
-			MixDigest:   legacy.MixDigest,
-		}
-
-		vicMainnetHash := vicMainnetHeader.HashPoSV().Hex()
-		fmt.Println("calculated hash : ", vicMainnetHash)
-
-		// fmt.Println("hash : ", rlpHash)
 		legacies = append(legacies, legacy)
 
 		// Map to Target
 		t := TargetHeaderData{
-			ParentHash:  legacy.ParentHash,
-			UncleHash:   legacy.UncleHash,
-			Coinbase:    legacy.Coinbase,
-			Root:        legacy.Root,
-			TxHash:      legacy.TxHash,
-			ReceiptHash: legacy.ReceiptHash,
-			Bloom:       legacy.Bloom,
-			Difficulty:  legacy.Difficulty,
-			Number:      legacy.Number,
-			GasLimit:    legacy.GasLimit,
-			GasUsed:     legacy.GasUsed,
-			Time:        legacy.Time,
-			Extra:       legacy.Extra,
-			MixDigest:   legacy.MixDigest,
-			Nonce:       legacy.Nonce,
-			LegacyHash:  legacy.LegacyHash,
-			// BaseFee:      nil, // Set BaseFee to nil for now as per instructions (or keep logic)
-			Attestor:     legacy.Validator,
+			ParentHash:   legacy.ParentHash,
+			UncleHash:    legacy.UncleHash,
+			Coinbase:     legacy.Coinbase,
+			Root:         legacy.Root,
+			TxHash:       legacy.TxHash,
+			ReceiptHash:  legacy.ReceiptHash,
+			Bloom:        legacy.Bloom,
+			Difficulty:   legacy.Difficulty,
+			Number:       legacy.Number,
+			GasLimit:     legacy.GasLimit,
+			GasUsed:      legacy.GasUsed,
+			Time:         legacy.Time,
+			Extra:        legacy.Extra,
+			MixDigest:    legacy.MixDigest,
+			Nonce:        legacy.Nonce,
+			LegacyHash:   legacy.LegacyHash,
 			NewAttestors: legacy.Validators,
+			Attestor:     legacy.Validator,
 			Penalties:    legacy.Penalties,
 		}
 
@@ -182,7 +162,6 @@ func main() {
 			Time:        uint64(t.Time),
 			Extra:       t.Extra,
 			MixDigest:   t.MixDigest,
-			BaseFee:     nil, // Explicit
 		}
 		if len(t.Nonce) == 8 {
 			copy(h.Nonce[:], t.Nonce)
@@ -211,9 +190,7 @@ func main() {
 		})
 
 		fmt.Printf("Processed block %d\n", num)
-		if num == start {
-			break
-		}
+
 	}
 
 	// Make dir if not exists

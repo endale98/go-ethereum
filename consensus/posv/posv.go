@@ -274,13 +274,15 @@ func (p *Posv) verifySeal(chain ChainReader, header *types.Header, parents []*ty
 	}
 
 	difficulty := p.calcDifficulty(chain, parent, creator)
-	fmt.Printf("verify seal block : \n :number : %d\nhash : %d\nblock difficulty : %d\ncalc difficulty : %d\ncreator: %s\n", header.Number, header.Hash(), header.Difficulty, difficulty, creator.Hex())
-	// Ensure that the block's difficulty is meaningful (may not be correct at this point)
-	if number > 0 {
-		if header.Difficulty.Int64() != difficulty.Int64() {
-			return errInvalidDifficulty
-		}
-	}
+	log.Info("verify seal block : \n :number : %d\nhash : %s\nblock difficulty : %d\ncalc difficulty : %d\ncreator: %s\n", header.Number, header.Hash().Hex(), header.Difficulty, difficulty, creator.Hex())
+
+	// [todo] check difficulty, not valid at this time
+	// if number > 0 {
+	// 	if header.Difficulty.Int64() != difficulty.Int64() {
+	// 		return errInvalidDifficulty
+	// 	}
+	// }
+
 	masternodes := p.GetMasternodes(chain, header)
 	mstring := []string{}
 	for _, m := range masternodes {
@@ -290,19 +292,22 @@ func (p *Posv) verifySeal(chain ChainReader, header *types.Header, parents []*ty
 	for _, n := range snap.GetSigners() {
 		nstring = append(nstring, n.String())
 	}
-	if _, ok := snap.Signers[creator]; !ok {
-		valid := false
-		for _, m := range masternodes {
-			if m == creator {
-				valid = true
-				break
-			}
-		}
-		if !valid {
-			log.Debug("Unauthorized creator found", "block number", number, "creator", creator.String(), "masternodes", mstring, "snapshot from parent block", nstring)
-			return errUnauthorized
-		}
-	}
+
+	// [todo] check creator in masternodes
+	// if _, ok := snap.Signers[creator]; !ok {
+	// 	valid := false
+	// 	for _, m := range masternodes {
+	// 		log.Info("receive masternode %s\n", m.Hex())
+	// 		if m == creator {
+	// 			valid = true
+	// 			break
+	// 		}
+	// 	}
+	// 	if !valid {
+	// 		log.Debug("Unauthorized creator found", "block number", number, "creator", creator.String(), "masternodes", mstring, "snapshot from parent block", nstring)
+	// 		return errUnauthorized
+	// 	}
+	// }
 
 	if len(masternodes) > 1 {
 		for seen, recent := range snap.Recents {
@@ -626,7 +631,7 @@ func (c *Posv) Prepare(chain consensus.ChainReader, header *types.Header) error 
 			if err != nil {
 				return err
 			}
-			header.Validators = validators
+			header.NewAttestors = validators
 		}
 	}
 	header.Extra = append(header.Extra, make([]byte, extraSeal)...)
@@ -683,11 +688,6 @@ func (p *Posv) VerifyUncles(chain ChainReader, block *types.Block) error {
 }
 func (p *Posv) VerifySeal(chain ChainReader, header *types.Header) error {
 	return nil
-}
-
-// [to-do] implement snapshot
-func (p *Posv) snapshot(chain ChainReader, number uint64, hash common.Hash, parents []*types.Header) (*Snapshot, error) {
-	return nil, nil
 }
 
 func ecrecover(header *types.Header, sigcache *lru.Cache[common.Hash, []byte]) (common.Address, error) {

@@ -88,11 +88,11 @@ type Header struct {
 	Extra       []byte         `json:"extraData"        gencodec:"required"`
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       BlockNonce     `json:"nonce"`
-	Penalties   []byte         `json:"penalties"        gencodec:"required"`
 
-	Attestor     []byte `json:"attestor"   gencodec:"required"`
-	NewAttestors []byte `json:"newAttestors" gencodec:"required"`
-	Penalties    []byte `json:"penalties"   gencodec:"required"`
+	NewAttestors []byte `json:"newAttestors,omitempty"`
+	Attestor     []byte `json:"attestor,omitempty"`
+	Penalties    []byte `json:"penalties,omitempty"`
+
 	// BaseFee was added by EIP-1559 and is ignored in legacy headers.
 	BaseFee *big.Int `json:"baseFeePerGas" rlp:"optional"`
 
@@ -144,8 +144,8 @@ type headerMarshaling struct {
 	Hash          common.Hash `json:"hash"` // adds call to Hash() in MarshalJSON
 	BlobGasUsed   *hexutil.Uint64
 	ExcessBlobGas *hexutil.Uint64
-	Attestor      hexutil.Bytes
 	NewAttestors  hexutil.Bytes
+	Attestor      hexutil.Bytes
 	Penalties     hexutil.Bytes
 }
 
