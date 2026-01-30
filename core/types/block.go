@@ -69,6 +69,11 @@ type ExecutionWitness struct {
 }
 
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
+//
+// Viction Note: We disabled rlpgen for Header because Viction uses a non-standard, conditional RLP format
+// (Posv boolean flag, mixed AuRa/MixDigest fields) that cannot be auto-generated.
+// See header_rlp.go for the manual EncodeRLP/DecodeRLP implementation.
+//
 //go:generate go run ../../rlp/rlpgen -type Header -out gen_header_rlp.go
 
 // Header represents a block header in the Ethereum blockchain.
@@ -88,6 +93,12 @@ type Header struct {
 	Extra       []byte         `json:"extraData"        gencodec:"required"`
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       BlockNonce     `json:"nonce"`
+	// AuRa extensions
+	AuRaStep uint64 `json:"auraStep,omitempty"`
+	AuRaSeal []byte `json:"auraSeal,omitempty"`
+
+	// PoSV
+	Posv bool `json:"-"` // Not in JSON, handled by RLP boolean flag logic, Or just logic.
 
 	NewAttestors []byte `json:"newAttestors,omitempty"`
 	Attestor     []byte `json:"attestor,omitempty"`
@@ -110,26 +121,6 @@ type Header struct {
 
 	// RequestsHash was added by EIP-7685 and is ignored in legacy headers.
 	RequestsHash *common.Hash `json:"requestsHash" rlp:"optional"`
-}
-
-func (h *Header) HashPoSV() common.Hash {
-	return rlpHash([]interface{}{
-		h.ParentHash,
-		h.UncleHash,
-		h.Coinbase,
-		h.Root,
-		h.TxHash,
-		h.ReceiptHash,
-		h.Bloom,
-		h.Difficulty,
-		h.Number,
-		h.GasLimit,
-		h.GasUsed,
-		h.Time,
-		h.Extra,
-		h.MixDigest,
-		h.Nonce,
-	})
 }
 
 // field type overrides for gencodec
