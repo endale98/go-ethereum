@@ -9,11 +9,12 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // Snapshot is the state of the authorization voting at a given point in time.
 type Snapshot struct {
-	config   *PosvConfig                     // Consensus engine parameters to fine tune behavior
+	config   *params.PosvConfig              // Consensus engine parameters to fine tune behavior
 	sigcache *lru.Cache[common.Hash, []byte] // Cache of recent block signatures to speed up ecrecover
 
 	Number  uint64                          `json:"number"`  // Block number where the snapshot was created
@@ -27,7 +28,7 @@ type Snapshot struct {
 // newSnapshot creates a new snapshot with the specified startup parameters. This
 // method does not initialize the set of recent signers, so only ever use if for
 // the genesis block.
-func newSnapshot(config *PosvConfig, sigcache *lru.Cache[common.Hash, []byte], number uint64, hash common.Hash, signers []common.Address) *Snapshot {
+func newSnapshot(config *params.PosvConfig, sigcache *lru.Cache[common.Hash, []byte], number uint64, hash common.Hash, signers []common.Address) *Snapshot {
 	snap := &Snapshot{
 		config:   config,
 		sigcache: sigcache,
@@ -43,7 +44,7 @@ func newSnapshot(config *PosvConfig, sigcache *lru.Cache[common.Hash, []byte], n
 	return snap
 }
 
-func loadSnapshot(config *PosvConfig, sigcache *lru.Cache[common.Hash, []byte], db ethdb.Database, hash common.Hash) (*Snapshot, error) {
+func loadSnapshot(config *params.PosvConfig, sigcache *lru.Cache[common.Hash, []byte], db ethdb.Database, hash common.Hash) (*Snapshot, error) {
 	blob, err := db.Get(append([]byte("posv-"), hash[:]...))
 	if err != nil {
 		return nil, err

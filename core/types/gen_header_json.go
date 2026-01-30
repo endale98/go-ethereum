@@ -31,9 +31,12 @@ func (h Header) MarshalJSON() ([]byte, error) {
 		Extra            hexutil.Bytes   `json:"extraData"        gencodec:"required"`
 		MixDigest        common.Hash     `json:"mixHash"`
 		Nonce            BlockNonce      `json:"nonce"`
-		Attestor         hexutil.Bytes   `json:"attestor"   gencodec:"required"`
-		NewAttestors     hexutil.Bytes   `json:"newAttestors" gencodec:"required"`
-		Penalties        hexutil.Bytes   `json:"penalties"   gencodec:"required"`
+		AuRaStep         uint64          `json:"auraStep,omitempty"`
+		AuRaSeal         []byte          `json:"auraSeal,omitempty"`
+		Posv             bool            `json:"-"`
+		NewAttestors       hexutil.Bytes   `json:"newAttestors,omitempty"`
+		Attestor        hexutil.Bytes   `json:"attestor,omitempty"`
+		Penalties        hexutil.Bytes   `json:"penalties,omitempty"`
 		BaseFee          *hexutil.Big    `json:"baseFeePerGas" rlp:"optional"`
 		WithdrawalsHash  *common.Hash    `json:"withdrawalsRoot" rlp:"optional"`
 		BlobGasUsed      *hexutil.Uint64 `json:"blobGasUsed" rlp:"optional"`
@@ -58,8 +61,11 @@ func (h Header) MarshalJSON() ([]byte, error) {
 	enc.Extra = h.Extra
 	enc.MixDigest = h.MixDigest
 	enc.Nonce = h.Nonce
-	enc.Attestor = h.Attestor
+	enc.AuRaStep = h.AuRaStep
+	enc.AuRaSeal = h.AuRaSeal
+	enc.Posv = h.Posv
 	enc.NewAttestors = h.NewAttestors
+	enc.Attestor = h.Attestor
 	enc.Penalties = h.Penalties
 	enc.BaseFee = (*hexutil.Big)(h.BaseFee)
 	enc.WithdrawalsHash = h.WithdrawalsHash
@@ -89,9 +95,12 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 		Extra            *hexutil.Bytes  `json:"extraData"        gencodec:"required"`
 		MixDigest        *common.Hash    `json:"mixHash"`
 		Nonce            *BlockNonce     `json:"nonce"`
-		Attestor         *hexutil.Bytes  `json:"attestor"   gencodec:"required"`
-		NewAttestors     *hexutil.Bytes  `json:"newAttestors" gencodec:"required"`
-		Penalties        *hexutil.Bytes  `json:"penalties"   gencodec:"required"`
+		AuRaStep         *uint64         `json:"auraStep,omitempty"`
+		AuRaSeal         []byte          `json:"auraSeal,omitempty"`
+		Posv             *bool           `json:"-"`
+		NewAttestors     *hexutil.Bytes  `json:"newAttestors,omitempty"`
+		Attestor         *hexutil.Bytes  `json:"attestor,omitempty"`
+		Penalties        *hexutil.Bytes  `json:"penalties,omitempty"`
 		BaseFee          *hexutil.Big    `json:"baseFeePerGas" rlp:"optional"`
 		WithdrawalsHash  *common.Hash    `json:"withdrawalsRoot" rlp:"optional"`
 		BlobGasUsed      *hexutil.Uint64 `json:"blobGasUsed" rlp:"optional"`
@@ -160,18 +169,24 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 	if dec.Nonce != nil {
 		h.Nonce = *dec.Nonce
 	}
-	if dec.Attestor == nil {
-		return errors.New("missing required field 'attestor' for Header")
+	if dec.AuRaStep != nil {
+		h.AuRaStep = *dec.AuRaStep
 	}
-	h.Attestor = *dec.Attestor
-	if dec.NewAttestors == nil {
-		return errors.New("missing required field 'newAttestors' for Header")
+	if dec.AuRaSeal != nil {
+		h.AuRaSeal = dec.AuRaSeal
 	}
-	h.NewAttestors = *dec.NewAttestors
-	if dec.Penalties == nil {
-		return errors.New("missing required field 'penalties' for Header")
+	if dec.Posv != nil {
+		h.Posv = *dec.Posv
 	}
-	h.Penalties = *dec.Penalties
+	if dec.NewAttestors != nil {
+		h.NewAttestors = *dec.NewAttestors
+	}
+	if dec.Attestor != nil {
+		h.Attestor = *dec.Attestor
+	}
+	if dec.Penalties != nil {
+		h.Penalties = *dec.Penalties
+	}
 	if dec.BaseFee != nil {
 		h.BaseFee = (*big.Int)(dec.BaseFee)
 	}
